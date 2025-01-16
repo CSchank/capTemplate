@@ -24,6 +24,7 @@ jobs:
           CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- docs/**/*.tex | xargs)
           echo "Changed files: $CHANGED_FILES"
           echo "CHANGED_FILES=$CHANGED_FILES" >> $GITHUB_ENV
+          echo "CHANGED_FILENAMES=$(for file in $CHANGED_FILES; do basename "$file"; done | xargs)" >> $GITHUB_ENV
       - uses: xu-cheng/texlive-action@v2
         name: Compile LaTeX Files
         with:
@@ -39,6 +40,6 @@ jobs:
       - name: Commit and push PDFs
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: 'Add/Update PDFs for changed LaTeX files: ${{ env.CHANGED_FILES }}'
+          commit_message: 'Add/Update PDFs for changed LaTeX files: ${{ env.CHANGED_FILENAMES }}'
           file_pattern: 'docs/*.pdf'
           branch: main
