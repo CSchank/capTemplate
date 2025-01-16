@@ -7,28 +7,32 @@ on:
   pull_request:
     branches: main
     paths: [docs/**]
-    
+
 permissions:
   contents: write
 
 jobs:
   compile-latex:
     runs-on: ubuntu-latest
-    steps: # from https://github.com/Crowdfeeding/rescue-delivery-capstone/blob/main/.github/workflows/docs.yaml
-      - uses: actions/checkout@v4
-      - uses: xu-cheng/texlive-action@v2
-        with:
-          scheme: full
-          texlive_version: 2024
-          run: |
-            apk add make
-            cd docs
-            make
-
-      # Commit and push generated PDFs (from ChatGPT advice)
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get changed LaTeX files
+        id: latex-files
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- docs/*.tex)
+          echo "Changed files: $CHANGED_FILES"
+          echo "CHANGED_FILES=$CHANGED_FILES" >> $GITHUB_ENV
+      - name: Install dependencies and compile LaTeX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make
+          cd docs
+          for file in ${{ env.CHANGED_FILES }}; do
+            make $(basename "$file" .tex).pdf
+          done
       - name: Commit and push PDFs
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: 'Add/Update PDFs from changed LaTeX files'
+          commit_message: 'Add/Update PDFs for changed LaTeX files: ${{ env.CHANGED_FILES }}'
           file_pattern: 'docs/*.pdf'
           branch: main
