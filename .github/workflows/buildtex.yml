@@ -30,8 +30,8 @@ jobs:
           scheme: full
           texlive_version: 2024
           run: |
-            sudo apt-get update
-            sudo apt-get install -y make
+            apt update
+            apt install -y make
             cd docs
             for file in ${{ env.CHANGED_FILES }}; do 
               dir=$(dirname "$file" | cut -d'/' -f2-)
