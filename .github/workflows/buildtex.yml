@@ -29,8 +29,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y make
           cd docs
-          for file in ${{ env.CHANGED_FILES }}; do
-            make $(basename "$file" .tex).pdf
+          for file in ${{ env.CHANGED_FILES }}; 
+            do dir=$(dirname "$file") 
+            make "$dir/$(basename "$file" .tex).pdf" 
           done
       - name: Commit and push PDFs
         uses: stefanzweifel/git-auto-commit-action@v4
