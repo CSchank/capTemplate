@@ -15,15 +15,13 @@ jobs:
   compile-latex:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Get the previous commit
-        id: previous-commit
-        run: echo "::set-output name=previous_commit::$(git rev-parse HEAD~1)"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Get changed LaTeX files
         id: latex-files
         run: |
-          PREV_COMMIT=${{ github.event.before || steps.previous-commit.outputs.previous_commit }}
-          CHANGED_FILES=$(git diff --name-only $PREV_COMMIT ${{ github.sha }} -- docs/*.tex)
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- docs/*.tex)
           echo "Changed files: $CHANGED_FILES"
           echo "CHANGED_FILES=$CHANGED_FILES" >> $GITHUB_ENV
       - name: Install dependencies and compile LaTeX
