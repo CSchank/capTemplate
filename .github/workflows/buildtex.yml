@@ -24,15 +24,19 @@ jobs:
           CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- docs/**/*.tex | xargs)
           echo "Changed files: $CHANGED_FILES"
           echo "CHANGED_FILES=$CHANGED_FILES" >> $GITHUB_ENV
-      - name: Install dependencies and compile LaTeX
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y make
-          cd docs
-          for file in ${{ env.CHANGED_FILES }}; do 
-            dir=$(dirname "$file" | cut -d'/' -f2-)
-            make "$dir/$(basename "$file" .tex).pdf" 
-          done
+      - uses: xu-cheng/texlive-action@v2
+        name: Compile LaTeX Files
+        with:
+          scheme: full
+          texlive_version: 2024
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y make
+            cd docs
+            for file in ${{ env.CHANGED_FILES }}; do 
+              dir=$(dirname "$file" | cut -d'/' -f2-)
+              make "$dir/$(basename "$file" .tex).pdf" 
+            done
       - name: Commit and push PDFs
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
