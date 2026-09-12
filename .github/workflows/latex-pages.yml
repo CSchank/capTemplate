@@ -85,8 +85,8 @@ jobs:
       - name: Install TeX Live and pandoc
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: texlive-latex-extra texlive-science texlive-fonts-extra texlive-fonts-recommended pandoc
-          version: 1.0
+          packages: texlive-latex-extra texlive-science texlive-fonts-extra texlive-fonts-recommended texlive-latex-recommended lmodern pandoc
+          version: 1.1
       - name: Verify the TeX toolchain is usable
         run: |
           # A restored cache that skipped texlive's postinst would leave
@@ -96,6 +96,17 @@ jobs:
           pandoc --version | head -1
           kpsewhich article.cls
           kpsewhich amsmath.sty
+          # pandoc's default template pulls in packages the .tex documents
+          # never ask for (lmodern.sty was missing the first time this ran),
+          # so smoke-test the Markdown path itself rather than guessing at
+          # the package list.
+          smoke=$(mktemp -d)
+          printf '%s\n' '# Smoke test' '' 'Math $x^2$ and a table:' '' \
+            '| a | b |' '|---|---|' '| 1 | 2 |' > "$smoke/smoke.md"
+          pandoc "$smoke/smoke.md" -o "$smoke/smoke.pdf" \
+            --pdf-engine=pdflatex --toc -V geometry:margin=1in
+          test -s "$smoke/smoke.pdf" && echo "pandoc -> PDF smoke test OK"
+          rm -rf "$smoke"
       - name: Compile LaTeX
         run: |
           PDF_CACHE_DIR="$GITHUB_WORKSPACE/build-pdf"
