@@ -99,6 +99,10 @@ jobs:
           # kpsewhich cannot see the restored packages, which surfaced as
           # "lmodern.sty not found" on the first cache hit.
           sudo mktexlsr
+          # ...and updmap-sys is what builds the font map files. Without it
+          # pdflatex finds lmodern.sty but not the fonts it maps to, failing
+          # with "Font rm-lmr7 at 600 not found".
+          sudo updmap-sys >/dev/null
 
           pdflatex --version | head -1
           pandoc --version | head -1
