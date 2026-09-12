@@ -189,38 +189,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Always start from repo root
-          pwd
-          ls
-
           # Recreate public directory
           rm -rf public
-          mkdir -p public          
-          
+          mkdir -p public
+
           # Copy PDFs preserving structure
           rsync -av build-pdf/ public/
-          
-          # Generate PDF list (paths relative to site root)
-          PDF_LIST=$(find public -name "*.pdf" | sort | sed 's|^public/||' | awk -F/ '
-          {
-            dir = $1
-            file = $NF
-            groups[dir] = groups[dir] "<li><a href=\"" $0 "\">" file "</a></li>\n"
-          }
-          END {
-            for (dir in groups) {
-              printf "<h2>%s</h2>\n<ul>\n%s</ul>\n", dir, groups[dir]
-            }
-          }')
 
-          # Ensure site template exists
-          test -f site/index.html
-
-          # Build index.html safely
-          awk -v list="$PDF_LIST" '
-            /<!-- PDF_LIST -->/ { print list; next }
-            { print }
-          ' site/index.html > public/index.html
+          # Build the index. This runs after the PDFs are committed, so the
+          # per-document timestamps come from that commit.
+          python3 .github/scripts/build_index.py \
+            --public public \
+            --template site/index.html \
+            --output public/index.html \
+            --tracked-dir pdfs
 
           # Copy static assets
           cp site/style.css public/
