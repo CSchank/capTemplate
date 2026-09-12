@@ -49,7 +49,9 @@ jobs:
           # to rebuild the documents that read it. Which documents those are is
           # decided by select_docs.py from the recorded dependency graph, so no
           # filtering by extension happens here.
-          SCOPE=(':(glob)docs/**' ':(glob)refs/**')
+          SCOPE=(':(glob)docs/**' ':(glob)refs/**' 'Makefile'
+                 ':(glob).github/workflows/latex-pages.yml'
+                 ':(glob).github/scripts/**')
 
           CHANGED_FILES=$(git diff --name-only --diff-filter=d "$BASE" "${{ github.sha }}" -- "${SCOPE[@]}" | xargs)
           DELETED_FILES=$(git diff --name-only --diff-filter=D "$BASE" "${{ github.sha }}" -- "${SCOPE[@]}" | xargs)
