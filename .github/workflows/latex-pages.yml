@@ -94,6 +94,12 @@ jobs:
           # A restored cache that skipped texlive's postinst would leave
           # pdflatex unable to find packages. Fail here, loudly, rather than
           # part way through compiling documents.
+          # Restoring cached package files skips their postinst scripts, and
+          # texlive's is what builds the ls-R filename database. Without this
+          # kpsewhich cannot see the restored packages, which surfaced as
+          # "lmodern.sty not found" on the first cache hit.
+          sudo mktexlsr
+
           pdflatex --version | head -1
           pandoc --version | head -1
           kpsewhich article.cls
