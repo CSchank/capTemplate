@@ -29,16 +29,35 @@ jobs:
           key: pdf-cache-${{ github.run_id }}
           restore-keys: |
             pdf-cache-
+      - name: Seed PDF cache from committed PDFs
+        run: |
+          # The committed pdfs/ directory is the source of truth, not the
+          # Actions cache. A cache miss (eviction, 7-day expiry, size limit)
+          # must never let the later rsync --delete wipe committed PDFs.
+          mkdir -p build-pdf
+          if [ -d pdfs ]; then
+            rsync -av --ignore-existing pdfs/ build-pdf/
+          fi
       - name: Get changed LaTeX files
         id: latex-files
         run: |
           BASE=${{ github.event.before }}
           [ -z "$BASE" ] && BASE=HEAD^
 
-          CHANGED_FILES=$(git diff --name-only "$BASE" "${{ github.sha }}" -- ':(glob)docs/**/*.tex' | xargs)
+          # README.md and Expectations*.md are instructor-owned instructions,
+          # not team deliverables, so they are never compiled.
+          SOURCES=(':(glob)docs/**/*.tex'
+                   ':(glob)docs/**/*.md'
+                   ':(exclude,glob)docs/**/README.md'
+                   ':(exclude,glob)docs/**/Expectations*.md')
+
+          CHANGED_FILES=$(git diff --name-only --diff-filter=d "$BASE" "${{ github.sha }}" -- "${SOURCES[@]}" | xargs)
+          DELETED_FILES=$(git diff --name-only --diff-filter=D "$BASE" "${{ github.sha }}" -- "${SOURCES[@]}" | xargs)
 
           echo "Changed files: $CHANGED_FILES"
+          echo "Deleted files: $DELETED_FILES"
           echo "CHANGED_FILES=$CHANGED_FILES" >> $GITHUB_ENV
+          echo "DELETED_FILES=$DELETED_FILES" >> $GITHUB_ENV
 
           CHANGED_FILENAMES=$(for file in $CHANGED_FILES; do basename "$file"; done | xargs)
           echo "CHANGED_FILENAMES=$CHANGED_FILENAMES" >> $GITHUB_ENV
@@ -54,7 +73,9 @@ jobs:
         run: |
           sudo apt-get update
           #sudo apt-get install -y texlive-full #if needed, but very large
-          sudo apt-get install -y --fix-missing texlive-latex-extra texlive-science texlive-fonts-extra #texlive-xetex texlive-luatex texlive-bibtex-extra 
+          sudo apt-get install -y --fix-missing texlive-latex-extra texlive-science texlive-fonts-extra texlive-fonts-recommended #texlive-xetex texlive-luatex texlive-bibtex-extra 
+          # pandoc drives the Markdown -> PDF rule in the Makefile
+          sudo apt-get install -y pandoc
       - name: Compile LaTeX
         run: |
           PDF_CACHE_DIR="$GITHUB_WORKSPACE/build-pdf"
@@ -65,19 +86,65 @@ jobs:
           # Bootstrap: full build if cache is empty
           if [ -z "${CHANGED_FILES}" ] && [ -z "$(ls -A "$PDF_CACHE_DIR" 2>/dev/null)" ]; then
             echo "No cached PDFs found; building all documents"
-            CHANGED_FILES=$(find docs -name "*.tex")
+            CHANGED_FILES=$(find docs \( -name "*.tex" -o -name "*.md" \) \
+                            ! -name "README.md" ! -name "Expectations*.md")
           fi
 
-          for file in $CHANGED_FILES; do
+          # Map sources to PDF targets and de-duplicate: if a folder holds both
+          # Foo.md and Foo.tex they name the same target, and the Makefile
+          # resolves which source wins (Markdown does).
+          TARGETS=$(for file in $CHANGED_FILES; do echo "${file%.*}.pdf"; done | sort -u)
+
+          for pdf in $TARGETS; do
             # Build using existing Makefile rules
-            make -B "${file%.tex}.pdf"
-              
-            # Copy result into build-pdf, preserving structure
-            rel=$(dirname "$file" | cut -d'/' -f2-)
+            make -B "$pdf"
+
+            # Copy result into build-pdf, preserving structure below docs/
+            rel=$(dirname "$pdf"); rel="${rel#docs}"; rel="${rel#/}"
             mkdir -p "$PDF_CACHE_DIR/$rel"
-            cp "${file%.tex}.pdf" "$PDF_CACHE_DIR/$rel/"
+            cp "$pdf" "$PDF_CACHE_DIR/$rel/"
+          done
+
+          # Remove cached PDFs for any source that was deleted, unless a
+          # sibling source still builds the same target (e.g. Foo.tex deleted
+          # but Foo.md remains).
+          for file in $DELETED_FILES; do
+            pdf="${file%.*}.pdf"
+            if [ -f "${pdf%.pdf}.tex" ] || [ -f "${pdf%.pdf}.md" ]; then
+              echo "Not removing $pdf; another source still builds it"
+              continue
+            fi
+            rel=$(dirname "$pdf"); rel="${rel#docs}"; rel="${rel#/}"
+            rm -f "$PDF_CACHE_DIR/$rel/$(basename "$pdf")"
           done
         #continue-on-error: true # Job continues even if this step fails
+      - name: Sync PDFs for TA review
+        run: |
+          rm -rf pdfs
+          mkdir -p pdfs
+          rsync -av --delete build-pdf/ pdfs/
+      - name: Commit PDFs to repo
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pdfs
+          if git diff --cached --quiet; then
+            echo "No PDF changes to commit"
+          else
+            git commit -m "Update generated PDFs for review"
+            # Another docs push may have landed while we were compiling.
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then
+                echo "Pushed PDFs on attempt $attempt"
+                exit 0
+              fi
+              echo "Push rejected; rebasing onto latest main (attempt $attempt)"
+              git pull --rebase origin main
+            done
+            echo "Could not push PDFs after 3 attempts"
+            exit 1
+          fi
       - name: Prepare site
         run: |
           set -euo pipefail
