@@ -43,6 +43,21 @@ def as_utc_text(moment):
     return moment.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def as_iso(moment):
+    return moment.astimezone(datetime.timezone.utc).isoformat()
+
+
+def time_tag(moment, css_class, prefix=""):
+    """A <time> the page's script rewrites into the reader's own timezone.
+
+    The UTC text stays as the element's content so the page still reads
+    correctly with JavaScript disabled.
+    """
+    return ('<time class="%s" datetime="%s" data-prefix="%s">%s%s</time>'
+            % (css_class, escape(as_iso(moment)), escape(prefix),
+               escape(prefix), escape(as_utc_text(moment))))
+
+
 def escape(text):
     return (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace('"', "&quot;"))
@@ -65,8 +80,7 @@ def collect(public_dir, tracked_dir):
                 # file itself rather than showing nothing.
                 moment = datetime.datetime.fromtimestamp(
                     os.path.getmtime(full), datetime.timezone.utc)
-            sections.setdefault(section, []).append(
-                (href, name, as_utc_text(moment)))
+            sections.setdefault(section, []).append((href, name, moment))
     return sections
 
 
@@ -75,11 +89,11 @@ def render(sections):
     for section in sorted(sections):
         lines.append("<h2>%s</h2>" % escape(section))
         lines.append("<ul>")
-        for href, name, stamp in sections[section]:
+        for href, name, moment in sections[section]:
             lines.append(
-                '  <li><a href="%s">%s</a>'
-                '<span class="updated">updated %s</span></li>'
-                % (escape(href), escape(name), escape(stamp)))
+                '  <li><a href="%s">%s</a>%s</li>'
+                % (escape(href), escape(name),
+                   time_tag(moment, "updated", "updated ")))
         lines.append("</ul>")
     return "\n".join(lines)
 
@@ -108,8 +122,9 @@ def main():
                  % (args.template, PDF_LIST_MARKER))
 
     page = page.replace(PDF_LIST_MARKER, render(sections))
-    generated = as_utc_text(datetime.datetime.now(datetime.timezone.utc))
-    page = page.replace(GENERATED_MARKER, escape(generated))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    page = page.replace(GENERATED_MARKER, time_tag(now, "generated"))
+    generated = as_utc_text(now)
 
     with open(args.output, "w") as handle:
         handle.write(page)
