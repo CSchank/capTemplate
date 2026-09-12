@@ -142,21 +142,17 @@ jobs:
             cp "$pdf" "$PDF_CACHE_DIR/$rel/"
           done
 
-          # Remove cached PDFs for any document that was deleted, unless a
-          # sibling source still builds the same target (e.g. Foo.tex deleted
-          # but Foo.md remains).
-          for file in $DELETED_FILES; do
-            case "$file" in
-              *.tex|*.md) ;;
-              *) continue ;;   # a dependency, not a document: nothing to remove
-            esac
-            pdf="${file%.*}.pdf"
-            if [ -f "${pdf%.pdf}.tex" ] || [ -f "${pdf%.pdf}.md" ]; then
-              echo "Not removing $pdf; another source still builds it"
-              continue
+          # Remove cached PDFs that no longer have a source document. This is
+          # driven by the filesystem rather than by this push's diff: a run
+          # that fails before this point would otherwise lose the deletion for
+          # good, because the next push's diff no longer mentions it.
+          find "$PDF_CACHE_DIR" -name '*.pdf' -print | while read -r cached; do
+            rel="${cached#$PDF_CACHE_DIR/}"
+            stem="docs/${rel%.pdf}"
+            if [ ! -f "$stem.tex" ] && [ ! -f "$stem.md" ]; then
+              echo "Removing $rel: no source document builds it any more"
+              rm -f "$cached"
             fi
-            rel=$(dirname "$pdf"); rel="${rel#docs}"; rel="${rel#/}"
-            rm -f "$PDF_CACHE_DIR/$rel/$(basename "$pdf")"
           done
 
           # Drop manifest entries for documents that no longer exist
