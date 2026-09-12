@@ -3,10 +3,10 @@ name: Build LaTeX and Deploy PDFs
 on:
   push:
     branches: main
-    paths: [docs/**]
+    paths: [docs/**, refs/**, Makefile, .github/scripts/**]
   pull_request:
     branches: main
-    paths: [docs/**]
+    paths: [docs/**, refs/**, Makefile, .github/scripts/**]
   workflow_dispatch:
 
 permissions:
@@ -44,22 +44,29 @@ jobs:
           BASE=${{ github.event.before }}
           [ -z "$BASE" ] && BASE=HEAD^
 
-          # README.md and Expectations*.md are instructor-owned instructions,
-          # not team deliverables, so they are never compiled.
-          SOURCES=(':(glob)docs/**/*.tex'
-                   ':(glob)docs/**/*.md'
-                   ':(exclude,glob)docs/**/README.md'
-                   ':(exclude,glob)docs/**/Expectations*.md')
+          # Every file under docs/ and refs/ is a candidate, not just .tex and
+          # .md: a change to a shared \input, a figure or the bibliography has
+          # to rebuild the documents that read it. Which documents those are is
+          # decided by select_docs.py from the recorded dependency graph, so no
+          # filtering by extension happens here.
+          SCOPE=(':(glob)docs/**' ':(glob)refs/**')
 
-          CHANGED_FILES=$(git diff --name-only --diff-filter=d "$BASE" "${{ github.sha }}" -- "${SOURCES[@]}" | xargs)
-          DELETED_FILES=$(git diff --name-only --diff-filter=D "$BASE" "${{ github.sha }}" -- "${SOURCES[@]}" | xargs)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=d "$BASE" "${{ github.sha }}" -- "${SCOPE[@]}" | xargs)
+          DELETED_FILES=$(git diff --name-only --diff-filter=D "$BASE" "${{ github.sha }}" -- "${SCOPE[@]}" | xargs)
 
           echo "Changed files: $CHANGED_FILES"
           echo "Deleted files: $DELETED_FILES"
-          echo "CHANGED_FILES=$CHANGED_FILES" >> $GITHUB_ENV
           echo "DELETED_FILES=$DELETED_FILES" >> $GITHUB_ENV
 
-          CHANGED_FILENAMES=$(for file in $CHANGED_FILES; do basename "$file"; done | xargs)
+          BUILD_DOCS=$(python3 .github/scripts/select_docs.py \
+                         --changed $CHANGED_FILES \
+                         --deleted $DELETED_FILES \
+                         --manifest .pdf-deps.json --root . | xargs)
+
+          echo "Documents to build: $BUILD_DOCS"
+          echo "BUILD_DOCS=$BUILD_DOCS" >> $GITHUB_ENV
+
+          CHANGED_FILENAMES=$(for file in $BUILD_DOCS; do basename "$file"; done | xargs)
           echo "CHANGED_FILENAMES=$CHANGED_FILENAMES" >> $GITHUB_ENV
 
           FILE_COUNT=$(echo "$CHANGED_FILENAMES" | wc -w)
@@ -81,23 +88,17 @@ jobs:
           PDF_CACHE_DIR="$GITHUB_WORKSPACE/build-pdf"
           mkdir -p "$PDF_CACHE_DIR"
 
-          echo "CHANGED_FILES seen by compile step: $CHANGED_FILES"
+          echo "Documents selected for build: $BUILD_DOCS"
 
-          # Bootstrap: full build if cache is empty
-          if [ -z "${CHANGED_FILES}" ] && [ -z "$(ls -A "$PDF_CACHE_DIR" 2>/dev/null)" ]; then
-            echo "No cached PDFs found; building all documents"
-            CHANGED_FILES=$(find docs \( -name "*.tex" -o -name "*.md" \) \
-                            ! -name "README.md" ! -name "Expectations*.md")
-          fi
+          for src in $BUILD_DOCS; do
+            pdf="${src%.*}.pdf"
 
-          # Map sources to PDF targets and de-duplicate: if a folder holds both
-          # Foo.md and Foo.tex they name the same target, and the Makefile
-          # resolves which source wins (Markdown does).
-          TARGETS=$(for file in $CHANGED_FILES; do echo "${file%.*}.pdf"; done | sort -u)
-
-          for pdf in $TARGETS; do
             # Build using existing Makefile rules
             make -B "$pdf"
+
+            # Record what this document actually read, for the next run's
+            # change detection. Runs after the build so the .fls is present.
+            python3 .github/scripts/record_deps.py "$src" .pdf-deps.json .
 
             # Copy result into build-pdf, preserving structure below docs/
             rel=$(dirname "$pdf"); rel="${rel#docs}"; rel="${rel#/}"
@@ -105,10 +106,14 @@ jobs:
             cp "$pdf" "$PDF_CACHE_DIR/$rel/"
           done
 
-          # Remove cached PDFs for any source that was deleted, unless a
+          # Remove cached PDFs for any document that was deleted, unless a
           # sibling source still builds the same target (e.g. Foo.tex deleted
           # but Foo.md remains).
           for file in $DELETED_FILES; do
+            case "$file" in
+              *.tex|*.md) ;;
+              *) continue ;;   # a dependency, not a document: nothing to remove
+            esac
             pdf="${file%.*}.pdf"
             if [ -f "${pdf%.pdf}.tex" ] || [ -f "${pdf%.pdf}.md" ]; then
               echo "Not removing $pdf; another source still builds it"
@@ -117,6 +122,9 @@ jobs:
             rel=$(dirname "$pdf"); rel="${rel#docs}"; rel="${rel#/}"
             rm -f "$PDF_CACHE_DIR/$rel/$(basename "$pdf")"
           done
+
+          # Drop manifest entries for documents that no longer exist
+          python3 .github/scripts/record_deps.py --prune .pdf-deps.json .
         #continue-on-error: true # Job continues even if this step fails
       - name: Sync PDFs for TA review
         run: |
@@ -128,7 +136,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pdfs
+          git add pdfs .pdf-deps.json
           if git diff --cached --quiet; then
             echo "No PDF changes to commit"
           else

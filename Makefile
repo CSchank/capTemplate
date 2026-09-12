@@ -1,7 +1,9 @@
 # Makefile for compiling .tex files
 
 # Define the pdflatex command
-PDFLATEX_CMD = pdflatex -interaction=nonstopmode
+# -recorder makes pdflatex write a .fls listing every file it read, which
+# is what record_deps.py turns into the dependency manifest.
+PDFLATEX_CMD = pdflatex -interaction=nonstopmode -recorder
 
 # Define the pandoc command, for teams who author a document in Markdown
 # instead of LaTeX. Uses the pdflatex already installed for the .tex rule.
