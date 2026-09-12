@@ -26,6 +26,13 @@ DOC_SUFFIXES = (".tex", ".md")
 IGNORED_BASENAMES = {"README.md", "README.txt", ".gitignore"}
 IGNORED_PREFIXES = ("pdfs/", "docs/SRS-Meyer/", ".github/")
 
+# Changing how documents are built can change every document, even though no
+# document source changed: the package list decides which LaTeX packages are
+# available, and the Makefile decides how each document is compiled.  These
+# override IGNORED_PREFIXES above.
+TOOLCHAIN_PATHS = ("Makefile", ".github/workflows/latex-pages.yml",
+                   ".github/scripts/")
+
 
 def is_document(rel_path):
     """True if this path is a document this pipeline compiles."""
@@ -113,6 +120,9 @@ def main():
             continue
         if path in documents:
             build.add(path)
+            continue
+        if path.startswith(TOOLCHAIN_PATHS):
+            full_rebuild_reason = "build configuration changed: %s" % path
             continue
         if is_ignorable(path):
             print("select_docs: ignoring %s" % path, file=sys.stderr)
