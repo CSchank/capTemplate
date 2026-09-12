@@ -19,11 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Restore PDF cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-pdf
           key: pdf-cache-${{ github.run_id }}
@@ -226,7 +226,7 @@ jobs:
           cp site/style.css public/
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: public
 
